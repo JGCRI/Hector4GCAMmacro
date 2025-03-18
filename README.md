@@ -1,2 +1,4 @@
-# Hector4GCAMmacro
+# Hector 4 GCAM macro
 Scripts and materials related to emulating select CMIP6 ESM with Hector as part of the GCAM macro project.
+
+
