@@ -14,12 +14,12 @@ my_newhc <- function(scenario, fixed_params){
   # Check scenarios
   is_esm <- grepl(pattern = "esm", x = scenario)
   is_ssp <- any(scenario %in% c("ssp119", "ssp126", "ssp245", "ssp370", "ssp434", 
-                                "ssp460", "ssp534-over", "ssp585"))
+                                "ssp460", "ssp534-over", "ssp585", "historical"))
   is_idealized <- any(scenario %in% c("1pctCO2", "abruptx4CO2"))
   
   stopifnot(any(c(is_ssp, is_idealized)))
   
-  if(is_ssp && is_esm){
+  if(is_ssp && isFALSE(is_esm)){
     ini <- list.files(here::here("inputs"), pattern = paste0("_", scenario), full.names = TRUE)
     hc <- newcore(ini, name = scenario)
   }
