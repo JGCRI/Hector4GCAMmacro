@@ -95,21 +95,19 @@ make_objective_fxn <- function(comp_data, fixed_params = NULL){
                     fixed_params = fixed_params, 
                     USE.NAMES = TRUE)
   
+  hc_historical <- my_newhc(scenario = "historical", 
+                            fixed_params = fixed_params)
+  
+  
+  
   objective_fxn <- function(p){
     
-    # Set the proposal parameter to the active Hector cores in preparation for running.
-    sapply(X = hc_list, FUN = my_setvars, params = p)
-    
-    # Run Hector and extract the Hector results.
-    lapply(hc_list, function(hc){
-      
-      run(hc)
-      fetchvars(hc, yrs, vars)
-      
-    }) %>% 
-      do.call(what = "rbind") %>% 
-      select(scenario, year, variable, value) -> 
-      hector_rslts
+    # Run hector with the proposal parameters, this custom 
+    # run function is useful because it makes sure that the
+    # results are normalized properly. 
+    hector_rslts <- custom_run_hector(p = p, hc_list = hc_list, 
+                                      hc_historical = hc_historical, 
+                                      vars = vars, yrs = yrs)
     
     
     # Get the mean squared error, although we might want to adjust this!
@@ -117,7 +115,7 @@ make_objective_fxn <- function(comp_data, fixed_params = NULL){
       pull(value) %>% 
       mean -> 
       error
-
+    
     return(error)
     
   }
@@ -193,26 +191,39 @@ my_modfit <- function(x, comp_data, fixed_params = NULL,
     
   } 
   
-  # Hector output when driven with the best paramter fits. 
-  lapply(unique(comp_data$scenario), function(scn){
-    
-    
-    hc <- my_newhc(scn, fixed_params = fit$par)
-    
-    
-    comp_data %>% 
-      filter(scenario == scn) -> 
-      this_data
-    
-    run(hc)
-    
-    out <- fetchvars(hc, dates = this_data$year, vars = unique(this_data$variable))
-    return(out)
-    
-    
-  }) %>% 
-    do.call(what = "rbind") -> 
+
+  
+  # Run hector with the best parameter fits, this custom 
+  # run function is useful because it makes sure that the
+  # results are normalized properly. 
+  scns <- unique(comp_data$scenario)
+  vars <- unique(comp_data$variable)
+  yrs <- unique(comp_data$year)
+  
+  hc_list <- sapply(FUN = my_newhc, 
+                    X = scns, 
+                    fixed_params = NULL, 
+                    USE.NAMES = TRUE)
+  
+  hc_historical <- my_newhc(scenario = "historical", 
+                            fixed_params = NULL)
+  
+  hector_rslts <- custom_run_hector(p = fit$par,
+                                    hc_list = hc_list, 
+                                    hc_historical = hc_historical, 
+                                    vars = vars,
+                                    yrs = yrs)
+  
+  # Subset the results to only include comparison data 
+  comp_data %>% 
+    select(scenario, variable, year) %>% 
+    distinct -> 
+    comp_data_stats
+  
+  hector_rslts %>% 
+    right_join(comp_data_stats, by = join_by(scenario, year, variable)) -> 
     hector_rslts
+  
   
   # Save a copy of the error by variable 
   error_table <- compute_error(hector_rslts, comp_data)
@@ -228,5 +239,44 @@ my_modfit <- function(x, comp_data, fixed_params = NULL,
 }
 
 
-
-
+# Run hector with a set of parameter values and normalize the results 
+# Args 
+#   p: vector of parameter values  
+#   hc_list: list of active hector core 
+#   hc_historical: active hector core set up to run the concentration driven historical 
+#   vars: vector of Hector variables to extract 
+#   yrs: vector of the years of data to save
+# Return: data.frame of hector results that are normalized to the 1850 - 1860 reference period
+custom_run_hector <- function(p, hc_list, hc_historical, vars, yrs){
+  
+  # Update the historical parameter core with the 
+  # proposal parameter values. 
+  hc_historical <- my_setvars(hc_historical, p)
+  run(hc_historical, runtodate = 1865) 
+  
+  # Get the reference value to use to get the temperature and heat flux anomaly. 
+  fetchvars(core = hc_historical, dates = 1850:1860, vars = c(GLOBAL_TAS(), HEAT_FLUX())) %>% 
+    summarise(ref_value = mean(value), .by = "variable") %>% 
+    # Although CO2 concentrations do not need to be normalized into 
+    # an anomaly add a reference value of 0 here so that NAs are not 
+    # introduced into the Hector results. 
+    rbind(data.frame("variable" = CONCENTRATIONS_CO2(), "ref_value" = 0)) -> 
+    refence_df
+  
+  # Run through all of the scenario hector cores
+  lapply(hc_list, function(hc){
+    
+    my_setvars(hc, params = p)
+    run(hc)
+    fetchvars(hc, yrs, vars) %>% 
+      left_join(refence_df, by = join_by(variable)) %>% 
+      mutate(value = value - ref_value) %>%  
+      select(scenario, year, variable, value, units)
+    
+  }) %>% 
+    bind_rows ->
+    normalized_hector_output
+  
+  return(normalized_hector_output)
+  
+}
