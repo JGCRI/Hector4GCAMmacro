@@ -9,40 +9,31 @@ library(hector)
 #   scenario: str name
 #   fixed_params: a vector of the hector parameters requires string names and numeric values
 # Returns: active hc with new parameter values
-my_newhc <- function(scenario, fixed_params){
+my_newhc <- function(scenario, fixed_params = NULL){
   
   # Check scenarios
   is_esm <- grepl(pattern = "esm", x = scenario)
   is_ssp <- any(scenario %in% c("ssp119", "ssp126", "ssp245", "ssp370", "ssp434", 
                                 "ssp460", "ssp534-over", "ssp585", "historical"))
-  is_idealized <- any(scenario %in% c("1pctCO2", "abruptx4CO2"))
+  is_idealized <- any(scenario %in% c("1pctCO2", "abrupt4xCO2"))
   
   stopifnot(any(c(is_ssp, is_idealized)))
   
   if(is_ssp && isFALSE(is_esm)){
     ini <- list.files(here::here("inputs"), pattern = paste0("_", scenario), full.names = TRUE)
-    hc <- newcore(ini, name = scenario)
   }
   
   
   if(is_ssp && is_esm){
     ini <- list.files(here::here("inputs"), pattern = paste0("esm-", scenario), full.names = TRUE)
-    hc <- newcore(ini, name = scenario)
   }
   
   if(is_idealized){
     ini <- list.files(here::here("inputs"), pattern = scenario, full.names = TRUE)
-    hc <- newcore(ini, name = scenario)
   }
   
-  # If there are no fixed parameters return the active hector core
-  if(is.null(fixed_params)){
-    
-    return(hc)
-    
-  }
   
-  # Otherwise update the hector core with parameter values 
+  hc <- newcore(ini, name = scenario)
   hc <- my_setvars(hc = hc, params = fixed_params)
   
   return(hc)

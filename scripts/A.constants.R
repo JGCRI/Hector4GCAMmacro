@@ -25,6 +25,6 @@ stopifnot(packageVersion("hector") == "3.2.0")
 # TODO packages that are probably not going to be required but could be helpful during
 # the developmental stage.
 library(ggplot2)
-
+theme_set(theme_bw())
 
 
