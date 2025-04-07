@@ -11,9 +11,12 @@
 source("scripts/A.constants.R")
 
 # Models/experiments of interest 
-model_names <- c("MRI-ESM2-0", "CanESM5", "MIROC6")
-exp_names <- c("historical", "ssp119", "ssp126", "ssp245", "ssp370", "ssp585", 
-               "1pctCO2", "abrupt-4xCO2", "ssp434", "ssp460", "ssp534-over")
+model_names    <- c("MRI-ESM2-0", "CanESM5", "MIROC6")
+idealized_exps <- c("1pctCO2", "abrupt-4xCO2")
+scns_exps      <- c("historical", "ssp119", "ssp126", "ssp245", "ssp370", "ssp585", 
+                    "ssp434", "ssp460", "ssp534-over")
+exp_names     <- c(idealized_exps, scns_exps)
+
 
 
 # Import the CMIP6 data and throw an error if the raw data has not been 
@@ -26,15 +29,9 @@ stopifnot(dir.exists(CMIP6_DIR))
 file.path(CMIP6_DIR, "cmip6_annual_tas_global.csv") %>% 
   read.csv %>%
   filter(model %in% model_names) %>% 
-  filter(experiment %in% exp_names) %>%  
-  # For whatever reason the temperature anomaly is labeled 
-  # Tgav in this data set.
-  filter(variable == "Tgav") %>% 
-  filter(year <= 2100) %>% 
-  select(model, scenario = experiment, year, value, units, ensemble) %>% 
-  mutate(variable = GLOBAL_TAS()) -> 
-  temp_data
-  
+  filter(experiment %in% exp_names) %>% 
+  filter(variable == "tas") -> 
+  raw_temp_data
 
 # Ocean heat content 
 file.path(CMIP6_DIR, "cmip6_annual_ocean_heat_flux.csv") %>% 
@@ -45,7 +42,43 @@ file.path(CMIP6_DIR, "cmip6_annual_ocean_heat_flux.csv") %>%
   filter(year <= 2100) -> 
   raw_ohf_data
 
+# 1 . Temperature Data ---------------------------------------------------------
 
+# Normalize the idealized scenario data relative to the 1850 values. 
+raw_temp_data %>% 
+  filter(experiment %in% idealized_exps) %>% 
+  filter(year == 1850) %>% 
+  select(model, experiment, ensemble, ref_value = value) -> 
+  idealized_ref_values 
+
+raw_temp_data %>% 
+  filter(experiment %in% idealized_exps) %>%  
+  left_join(idealized_ref_values, by = join_by(model, experiment, ensemble)) %>% 
+  mutate(value = value - ref_value) %>% 
+  select(model, experiment, ensemble, variable, year, value, units) -> 
+  idealized_temp_data 
+
+raw_temp_data %>% 
+  filter(experiment %in% scns_exps) %>% 
+  filter(year %in% 1850:1860) %>% 
+  summarise(value = mean(value), .by = c("model", "ensemble")) %>% 
+  select(model, ensemble, ref_value = value) -> 
+  scn_ref_values 
+
+raw_temp_data %>% 
+  filter(experiment %in% scns_exps) %>%  
+  left_join(scn_ref_values, by = join_by(model, ensemble)) %>% 
+  mutate(value = value - ref_value) %>% 
+  select(model, experiment, ensemble, variable, year, value, units) -> 
+  scn_temp_data 
+
+# The temperature data should include both the idealized and scenario results 
+rbind(scn_temp_data, idealized_temp_data) %>%
+  mutate(variable = GLOBAL_TAS()) %>% 
+  rename(scenario = experiment) -> 
+  temp_data
+  
+  
 # 1. Normalize Heat Flux -------------------------------------------------------
 
 # We need to normalize the ocean heat flux relative to the 1850-1860 base period. 
@@ -54,7 +87,7 @@ raw_ohf_data %>%
   filter(year %in% 1850:1860) %>% 
   summarise(ref_value = mean(value), .by = c(model)) -> 
   heat_flux_ref_values
-  
+
 raw_ohf_data %>%  
   left_join(heat_flux_ref_values, by = join_by(model)) %>% 
   mutate(value = value - ref_value) %>% 
