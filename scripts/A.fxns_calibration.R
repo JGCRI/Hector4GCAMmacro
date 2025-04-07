@@ -131,15 +131,17 @@ compute_error <- function(data_1, data_2){
     SE_df
   
   SE_df %>% 
-    summarise(ref_value = sd(SE), .by = c("variable")) ->
+    summarise(ref_value = sd(SE), .by = c("variable", "scenario")) ->
     ref_value
   
   
   SE_df %>% 
-    left_join(ref_value, by = join_by(variable)) %>% 
+    left_join(ref_value, by = join_by(variable, scenario)) %>% 
     mutate(NSE = SE / ref_value) %>% 
-    summarise(MSE = mean(SE), MNSE = mean(NSE), .by = c("variable")) %>% 
-    select(variable, value = MNSE)
+    summarise(MSE = mean(SE), value = mean(NSE), .by = c("variable", "scenario")) -> 
+    out 
+  
+  return(out)
   
   
 }
@@ -182,7 +184,7 @@ my_modfit <- function(x, comp_data, fixed_params = NULL,
     
   } 
   
-
+  
   
   # Run hector with the best parameter fits, this custom 
   # run function is useful because it makes sure that the
@@ -252,13 +254,32 @@ custom_run_hector <- function(p, hc_list, hc_historical, vars, yrs){
     # an anomaly add a reference value of 0 here so that NAs are not 
     # introduced into the Hector results. 
     rbind(data.frame("variable" = CONCENTRATIONS_CO2(), "ref_value" = 0)) -> 
-    refence_df
+    refence_hist
+  
+  data.frame(variable = c(GLOBAL_TAS(), HEAT_FLUX(), CONCENTRATIONS_CO2()), 
+             ref_value = 0) -> 
+    refence_zero
+  
+  
   
   # Run through all of the scenario hector cores
   lapply(hc_list, function(hc){
     
     my_setvars(hc, params = p)
     run(hc)
+    
+    if(hc$name %in% c( "1pctCO2", "abrupt4xCO2")){
+      
+      refence_df <- refence_zero
+    }else{
+    
+      refence_df <- refence_hist
+    }
+    
+    
+    
+    
+    
     fetchvars(hc, yrs, vars) %>% 
       left_join(refence_df, by = join_by(variable)) %>% 
       mutate(value = value - ref_value) %>%  
