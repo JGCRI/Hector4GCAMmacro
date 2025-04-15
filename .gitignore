@@ -3,3 +3,7 @@
 .RData
 .Ruserdata
 Hector4GCAMmacro.Rproj
+.DS_Store
+
+# Ignore scratch scripts 
+scripts/scratch/*
