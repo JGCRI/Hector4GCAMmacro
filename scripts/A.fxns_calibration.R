@@ -1,8 +1,4 @@
-# Objective: Work on setting the calibration functions.... 
-
-library(hector)
-
-
+# Description: Commonly used functions for this project. 
 
 # Helper function that sets up a hector core for a scenario with some parameter values.
 # Args 
@@ -13,25 +9,23 @@ my_newhc <- function(scenario, fixed_params = NULL){
   
   # Check scenarios
   is_esm <- grepl(pattern = "esm", x = scenario)
-  is_ssp <- any(scenario %in% c("ssp119", "ssp126", "ssp245", "ssp370", "ssp434", 
-                                "ssp460", "ssp534-over", "ssp585", "historical"))
+  is_ssp <- grepl(pattern = paste0(c("ssp119", "ssp126", "ssp245", "ssp370", "ssp434", 
+                                "ssp460", "ssp534-over", "ssp585", "historical"), collapse = "|"), x = scenario)
   is_idealized <- any(scenario %in% c("1pctCO2", "abrupt4xCO2"))
   
   stopifnot(any(c(is_ssp, is_idealized)))
   
-  if(is_ssp && isFALSE(is_esm)){
+  if(is_ssp){
     ini <- list.files(here::here("inputs"), pattern = paste0("_", scenario), full.names = TRUE)
   }
   
-  
-  if(is_ssp && is_esm){
-    ini <- list.files(here::here("inputs"), pattern = paste0("esm-", scenario), full.names = TRUE)
-  }
   
   if(is_idealized){
     ini <- list.files(here::here("inputs"), pattern = scenario, full.names = TRUE)
   }
   
+
+  stopifnot(file.exists(ini))
   
   hc <- newcore(ini, name = scenario)
   hc <- my_setvars(hc = hc, params = fixed_params)
@@ -138,7 +132,8 @@ compute_error <- function(data_1, data_2){
   SE_df %>% 
     left_join(ref_value, by = join_by(variable, scenario)) %>% 
     mutate(NSE = SE / ref_value) %>% 
-    summarise(MSE = mean(SE), value = mean(NSE), .by = c("variable", "scenario")) -> 
+    summarise(MSE = mean(SE), value = mean(NSE), .by = c("variable", "scenario")) %>% 
+    mutate(value = if_else(variable == GLOBAL_TAS(), value * 2, value)) -> 
     out 
   
   return(out)
@@ -271,6 +266,7 @@ custom_run_hector <- function(p, hc_list, hc_historical, vars, yrs){
     if(hc$name %in% c( "1pctCO2", "abrupt4xCO2")){
       
       refence_df <- refence_zero
+      
     }else{
     
       refence_df <- refence_hist

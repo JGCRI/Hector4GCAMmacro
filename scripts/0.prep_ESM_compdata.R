@@ -29,8 +29,7 @@ stopifnot(dir.exists(CMIP6_DIR))
 file.path(CMIP6_DIR, "cmip6_annual_tas_global.csv") %>% 
   read.csv %>%
   filter(model %in% model_names) %>% 
-  filter(experiment %in% exp_names) %>% 
-  filter(variable == "tas") -> 
+  filter(experiment %in% exp_names) -> 
   raw_temp_data
 
 # Ocean heat content 
@@ -44,29 +43,24 @@ file.path(CMIP6_DIR, "cmip6_annual_ocean_heat_flux.csv") %>%
 
 # 1 . Temperature Data ---------------------------------------------------------
 
-# Normalize the idealized scenario data relative to the 1850 values. 
+# Save the tgav variable for the idealized scenarios 
 raw_temp_data %>% 
   filter(experiment %in% idealized_exps) %>% 
-  filter(year == 1850) %>% 
-  select(model, experiment, ensemble, ref_value = value) -> 
-  idealized_ref_values 
-
-raw_temp_data %>% 
-  filter(experiment %in% idealized_exps) %>%  
-  left_join(idealized_ref_values, by = join_by(model, experiment, ensemble)) %>% 
-  mutate(value = value - ref_value) %>% 
+  filter(variable == "Tgav") %>% 
   select(model, experiment, ensemble, variable, year, value, units) -> 
   idealized_temp_data 
 
 raw_temp_data %>% 
   filter(experiment %in% scns_exps) %>% 
   filter(year %in% 1850:1860) %>% 
+  filter(variable == "tas") %>%
   summarise(value = mean(value), .by = c("model", "ensemble")) %>% 
   select(model, ensemble, ref_value = value) -> 
   scn_ref_values 
 
 raw_temp_data %>% 
   filter(experiment %in% scns_exps) %>%  
+  filter(variable == "tas") %>%
   left_join(scn_ref_values, by = join_by(model, ensemble)) %>% 
   mutate(value = value - ref_value) %>% 
   select(model, experiment, ensemble, variable, year, value, units) -> 
@@ -85,15 +79,20 @@ rbind(scn_temp_data, idealized_temp_data) %>%
 raw_ohf_data %>% 
   filter(experiment == "historical") %>% 
   filter(year %in% 1850:1860) %>% 
-  summarise(ref_value = mean(value), .by = c(model)) -> 
+  summarise(ref_value = mean(value), .by = c("model")) -> 
   heat_flux_ref_values
 
 raw_ohf_data %>%  
   left_join(heat_flux_ref_values, by = join_by(model)) %>% 
   mutate(value = value - ref_value) %>% 
-  select(model, scenario = experiment, year, value, units, ensemble) %>% 
-  mutate(variable = HEAT_FLUX()) ->
+  select(model, scenario = experiment, year, value, units) ->
+  scn_heat_flux_data
+
+# The temperature data should include both the idealized and scenario results 
+scn_heat_flux_data %>%
+  mutate(variable = HEAT_FLUX()) -> 
   heat_flux_data
+
 
 # 2. Drop incomplete ensembles -------------------------------------------------
 # If an variable is missing an ensemble drop it from our data set. 
@@ -112,10 +111,7 @@ heat_flux_data %>%
   model_scenario_ensemble
 
 heat_flux_data %>% 
-  bind_rows(temp_data) %>% 
-  right_join(model_scenario_ensemble,
-             by = join_by(model, scenario, ensemble)) %>% 
-  filter(grepl(x = ensemble, pattern = "i1p1f1")) -> 
+  bind_rows(temp_data) -> 
   full_heatflux_tas_data
 
 # Make the scenario name consistent. 
@@ -194,6 +190,7 @@ missing_co2_data %>%
 # X. Save Data --------------------------------------------------------------
 # Save the comparison data by model type. 
 data <- bind_rows(full_heatflux_tas_data, complete_co2_data)
+
 
 for(m in model_names){
   
